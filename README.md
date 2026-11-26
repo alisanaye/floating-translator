@@ -180,3 +180,12 @@ rust-translator/target/release/floating-translator.exe
 - برای اجرای خودکار هنگام روشن شدن ویندوز، یک Shortcut از `run.bat` (یا فایل اجرایی Rust) در پوشه‌ی `shell:startup` قرار دهید.
 
 </details>
+
+---
+
+## مجوز و امضای دیجیتال (License & Code Signing)
+
+- این پروژه تحت مجوز متن‌باز [MIT License](LICENSE) منتشر شده است.
+- امضای دیجیتال رایگان نسخه‌های ویندوز توسط [SignPath.io](https://signpath.io/) و با گواهی [SignPath Foundation](https://signpath.org/) انجام می‌شود.
+
+> Free code signing provided by [SignPath.io](https://signpath.io/), using a certificate by [SignPath Foundation](https://signpath.org/).
