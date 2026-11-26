@@ -1,0 +1,48 @@
+name: Build and Release FloatingTranslator
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-translator
+
+      - name: Build release binary
+        working-directory: rust-translator
+        run: cargo build --release --locked
+
+      - name: Prepare FloatingTranslator.exe
+        shell: pwsh
+        run: Copy-Item "rust-translator/target/release/floating-translator.exe" "FloatingTranslator.exe"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FloatingTranslator-windows-x64
+          path: FloatingTranslator.exe
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: FloatingTranslator.exe
+          generate_release_notes: true
