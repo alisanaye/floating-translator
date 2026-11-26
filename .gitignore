@@ -1,0 +1,28 @@
+# Secrets & runtime configuration (contains Google API keys)
+config.json
+usage.json
+
+# Logs & debug artifacts
+*.log
+shot.png
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# Rust build artifacts
+rust-translator/target/
+
+# Compiled binaries & archives
+*.exe
+*.rar
+*.zip
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
