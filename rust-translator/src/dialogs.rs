@@ -13,12 +13,14 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_CONTROL, VK_ESCAPE, VK_INSERT, VK_RETURN, VK_SHIFT, VK_V,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateCaret, CreateWindowExW, DefWindowProcW, DestroyCaret, DestroyWindow, GetClientRect,
-    GetCursorPos, GetWindowRect, HideCaret, LoadCursorW, RegisterClassW, SetCaretPos, SetCursor,
-    SetForegroundWindow, SetTimer, SetWindowPos, ShowCaret, ShowWindow, CS_HREDRAW, CS_VREDRAW,
-    IDC_ARROW, IDC_HAND, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, WM_CHAR, WM_DESTROY, WM_ERASEBKGND,
-    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT,
-    WM_SETFOCUS, WM_SETCURSOR, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    AppendMenuW, CreateCaret, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyCaret,
+    DestroyMenu, DestroyWindow, GetClientRect, GetCursorPos, GetWindowRect, HideCaret, LoadCursorW,
+    RegisterClassW, SetCaretPos, SetCursor, SetForegroundWindow, SetTimer, SetWindowPos,
+    ShowCaret, ShowWindow, TrackPopupMenu, CS_HREDRAW, CS_VREDRAW, IDC_ARROW, IDC_HAND, MF_GRAYED,
+    MF_STRING, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    WM_CHAR, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONDOWN, WM_SETFOCUS, WM_SETCURSOR, WM_TIMER,
+    WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::config::{self, AppConfig, UsageRow};
@@ -389,6 +391,31 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
             ReleaseCapture();
             if let Some(w) = app.settings.as_mut() {
                 w.drag = None;
+            }
+            0
+        }
+        WM_RBUTTONDOWN => {
+            let (x, y) = mouse_xy(lparam);
+            let Some(id) = app.settings.as_ref().and_then(|w| w.hits.hit(x, y)) else { return 0 };
+            let pasted = if let Some(w) = app.settings.as_mut() {
+                if let Some(f) = w.field_mut(id) {
+                    with_canvas(|c| f.click(c, x));
+                    w.focus = Some(id);
+                    sync_caret(hwnd, w.field(id));
+                    invalidate(hwnd);
+                    let f = w.field_mut(id).unwrap();
+                    show_field_paste_menu(hwnd, f)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if pasted {
+                if let Some(w) = app.settings.as_ref() {
+                    sync_caret(hwnd, w.field(id));
+                    invalidate(hwnd);
+                }
             }
             0
         }
@@ -810,6 +837,22 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
             }
             0
         }
+        WM_RBUTTONDOWN => {
+            let (x, y) = mouse_xy(lparam);
+            if app.keys.as_ref().and_then(|w| w.hits.hit(x, y)) == Some(Id::KNew) {
+                if let Some(w) = app.keys.as_mut() {
+                    with_canvas(|c| w.new_key.click(c, x));
+                    w.focus = Some(Id::KNew);
+                    sync_caret(hwnd, Some(&w.new_key));
+                    invalidate(hwnd);
+                    if show_field_paste_menu(hwnd, &mut w.new_key) {
+                        sync_caret(hwnd, Some(&w.new_key));
+                        invalidate(hwnd);
+                    }
+                }
+            }
+            0
+        }
         WM_KEYDOWN => {
             let vk = wparam as i32;
             if vk == VK_ESCAPE as i32 {
@@ -874,6 +917,38 @@ fn handle_field_keydown(field: &mut Field, vk: i32) -> bool {
         field.paste(&clip)
     } else {
         field.on_key(vk)
+    }
+}
+
+fn show_field_paste_menu(hwnd: HWND, field: &mut Field) -> bool {
+    let clip = clipboard_text();
+    let flags = if clip.trim().is_empty() { MF_STRING | MF_GRAYED } else { MF_STRING };
+    let label = to_wide("چسباندن (Ctrl+V)");
+    let mut pt = POINT { x: 0, y: 0 };
+    let cmd = unsafe {
+        GetCursorPos(&mut pt);
+        let hmenu = CreatePopupMenu();
+        if hmenu.is_null() {
+            return false;
+        }
+        AppendMenuW(hmenu, flags, 1, label.as_ptr());
+        SetForegroundWindow(hwnd);
+        let cmd = TrackPopupMenu(
+            hmenu,
+            TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+            pt.x,
+            pt.y,
+            0,
+            hwnd,
+            std::ptr::null(),
+        );
+        DestroyMenu(hmenu);
+        cmd
+    };
+    if cmd == 1 {
+        field.paste(&clip)
+    } else {
+        false
     }
 }
 
