@@ -9,8 +9,8 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT, VK_ESCAPE,
-    VK_RETURN,
+    GetKeyState, ReleaseCapture, SetCapture, SetFocus, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+    VK_CONTROL, VK_ESCAPE, VK_INSERT, VK_RETURN, VK_SHIFT, VK_V,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateCaret, CreateWindowExW, DefWindowProcW, DestroyCaret, DestroyWindow, GetClientRect,
@@ -26,7 +26,7 @@ use crate::gdiplus::{GpCanvas, TextAlign};
 use crate::menu::{self, ItemKind, MenuAction, MenuItem};
 use crate::theme::Theme;
 use crate::ui::{self, rect, wrap_lines, Field, Hits, Id};
-use crate::win32::to_wide;
+use crate::win32::{clipboard_text, to_wide};
 use crate::{app, with_canvas, App};
 
 const F_LABEL: f32 = 12.0;
@@ -404,7 +404,7 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
             }
             if let Some(w) = app.settings.as_mut() {
                 if let Some(id) = w.focus {
-                    let handled = w.field_mut(id).map(|f| f.on_key(vk)).unwrap_or(false);
+                    let handled = w.field_mut(id).map(|f| handle_field_keydown(f, vk)).unwrap_or(false);
                     if handled {
                         sync_caret(hwnd, w.field(id));
                         invalidate(hwnd);
@@ -821,9 +821,10 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                 return 0;
             }
             if let Some(w) = app.keys.as_mut() {
-                w.new_key.on_key(vk);
-                sync_caret(hwnd, Some(&w.new_key));
-                invalidate(hwnd);
+                if handle_field_keydown(&mut w.new_key, vk) {
+                    sync_caret(hwnd, Some(&w.new_key));
+                    invalidate(hwnd);
+                }
             }
             0
         }
@@ -862,6 +863,17 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
             0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+fn handle_field_keydown(field: &mut Field, vk: i32) -> bool {
+    let ctrl = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
+    let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
+    if (ctrl && vk == VK_V as i32) || (shift && vk == VK_INSERT as i32) {
+        let clip = clipboard_text();
+        field.paste(&clip)
+    } else {
+        field.on_key(vk)
     }
 }
 

@@ -282,14 +282,30 @@ impl Field {
     /// ASCII only: every field is a key / language code / port / proxy URL.
     /// shortcut: no IME or RTL input in fields, add if a translated field is ever needed.
     pub fn on_char(&mut self, ch: char) {
-        if !(' '..='~').contains(&ch) {
-            return;
+        self.insert_char(ch);
+    }
+
+    /// Insert printable ASCII characters from pasted text at the caret, up to `self.max`.
+    pub fn paste(&mut self, text: &str) -> bool {
+        let mut changed = false;
+        for ch in text.trim().chars() {
+            if self.text.chars().count() >= self.max {
+                break;
+            }
+            if self.insert_char(ch) {
+                changed = true;
+            }
         }
-        if self.text.chars().count() >= self.max {
-            return;
+        changed
+    }
+
+    fn insert_char(&mut self, ch: char) -> bool {
+        if !(' '..='~').contains(&ch) || self.text.chars().count() >= self.max {
+            return false;
         }
         self.text.insert(self.caret, ch);
         self.caret += ch.len_utf8();
+        true
     }
 
     pub fn on_key(&mut self, vk: i32) -> bool {
@@ -377,4 +393,32 @@ pub fn is_rtl_text(text: &str) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn field_paste_inserts_ascii_and_respects_max() {
+        let mut f = Field::new(Id::SKey, String::new(), true, 10);
+        assert!(f.paste("  AIza123\r\n"));
+        assert_eq!(f.text, "AIza123");
+        assert_eq!(f.caret, 7);
+
+        // Truncates at max (10) and ignores non-ASCII
+        assert!(f.paste("456789"));
+        assert_eq!(f.text, "AIza123456");
+        assert_eq!(f.caret, 10);
+        assert!(!f.paste("x"));
+    }
+
+    #[test]
+    fn field_paste_inserts_at_caret() {
+        let mut f = Field::new(Id::SKey, "ac".to_string(), false, 10);
+        f.caret = 1;
+        assert!(f.paste("b"));
+        assert_eq!(f.text, "abc");
+        assert_eq!(f.caret, 2);
+    }
 }
