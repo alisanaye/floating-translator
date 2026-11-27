@@ -192,6 +192,7 @@ pub struct Field {
     pub id: Id,
     pub text: String,
     pub caret: usize,
+    pub scroll_x: f32,
     pub masked: bool,
     pub max: usize,
     pub rect: RectF,
@@ -201,7 +202,7 @@ pub struct Field {
 impl Field {
     pub fn new(id: Id, text: String, masked: bool, max: usize) -> Self {
         let caret = text.len();
-        Self { id, text, caret, masked, max, rect: rect(0.0, 0.0, 0.0, 0.0), font: 13.0 }
+        Self { id, text, caret, scroll_x: 0.0, masked, max, rect: rect(0.0, 0.0, 0.0, 0.0), font: 13.0 }
     }
 
     fn shown(&self) -> String {
@@ -212,6 +213,28 @@ impl Field {
         }
     }
 
+    /// Keep `self.scroll_x` within bounds so the caret stays inside the visible field box.
+    pub fn ensure_caret_visible(&mut self, c: &GpCanvas) {
+        let inner_w = (self.rect.width - 12.0).max(1.0);
+        let text = self.shown();
+        let total_w = c.measure_line_width(&text, self.font, false);
+        if total_w <= inner_w {
+            self.scroll_x = 0.0;
+            return;
+        }
+        let chars = self.char_of_byte(self.caret);
+        let prefix: String = text.chars().take(chars).collect();
+        let caret_offset = c.measure_line_width(&prefix, self.font, false);
+        let max_scroll = (total_w - inner_w).max(0.0);
+        self.scroll_x = self.scroll_x.clamp(0.0, max_scroll);
+        if caret_offset < self.scroll_x {
+            self.scroll_x = caret_offset;
+        } else if caret_offset > self.scroll_x + inner_w {
+            self.scroll_x = caret_offset - inner_w;
+        }
+        self.scroll_x = self.scroll_x.clamp(0.0, max_scroll);
+    }
+
     pub fn draw(&self, c: &GpCanvas, t: &Theme) {
         let r = self.rect;
         c.fill_round_rect(r.x, r.y, r.width, r.height, 4.0, t.bg);
@@ -219,10 +242,10 @@ impl Field {
         let inner = rect(r.x + 6.0, r.y, r.width - 12.0, r.height);
         c.set_clip(inner.x, inner.y, inner.width, inner.height);
         let text = self.shown();
-        // right-align the visible tail when the text is wider than the field
         let w = c.measure_line_width(&text, self.font, false);
-        let dx = if w > inner.width { inner.x + inner.width - w } else { 0.0 };
-        let draw_rect = rect(inner.x + dx, inner.y, w.max(inner.width), inner.height);
+        let max_scroll = (w - inner.width).max(0.0);
+        let sx = if w > inner.width { self.scroll_x.clamp(0.0, max_scroll) } else { 0.0 };
+        let draw_rect = rect(inner.x - sx, inner.y, w.max(inner.width), inner.height);
         let color = if self.text.is_empty() { t.fg_dim } else { t.fg };
         c.draw_text(&text, draw_rect, self.font, false, color, false, TextAlign::Near, true, false);
         c.reset_clip();
@@ -230,15 +253,16 @@ impl Field {
 
     pub fn click(&mut self, c: &GpCanvas, x: f32) {
         let inner_x = self.rect.x + 6.0;
-        let inner_w = self.rect.width - 12.0;
+        let inner_w = (self.rect.width - 12.0).max(1.0);
         let text = self.shown();
         let w = c.measure_line_width(&text, self.font, false);
-        let dx = if w > inner_w { inner_w - w } else { 0.0 };
+        let max_scroll = (w - inner_w).max(0.0);
+        let sx = if w > inner_w { self.scroll_x.clamp(0.0, max_scroll) } else { 0.0 };
         let mut best = 0usize;
         let mut best_d = f32::MAX;
         for i in 0..=self.text.chars().count() {
             let prefix: String = text.chars().take(i).collect();
-            let px = inner_x + dx + c.measure_line_width(&prefix, self.font, false);
+            let px = inner_x - sx + c.measure_line_width(&prefix, self.font, false);
             let d = (px - x).abs();
             if d < best_d {
                 best_d = d;
@@ -246,6 +270,7 @@ impl Field {
             }
         }
         self.caret = self.byte_of_char(best);
+        self.ensure_caret_visible(c);
     }
 
     fn byte_of_char(&self, chars: usize) -> usize {
@@ -265,10 +290,12 @@ impl Field {
         let chars = self.char_of_byte(self.caret);
         let prefix: String = text.chars().take(chars).collect();
         let inner_x = self.rect.x + 6.0;
-        let inner_w = self.rect.width - 12.0;
+        let inner_w = (self.rect.width - 12.0).max(1.0);
         let w = c.measure_line_width(&text, self.font, false);
-        let dx = if w > inner_w { inner_w - w } else { 0.0 };
-        inner_x + dx + c.measure_line_width(&prefix, self.font, false)
+        let max_scroll = (w - inner_w).max(0.0);
+        let sx = if w > inner_w { self.scroll_x.clamp(0.0, max_scroll) } else { 0.0 };
+        (inner_x - sx + c.measure_line_width(&prefix, self.font, false))
+            .clamp(inner_x, inner_x + inner_w)
     }
 
     pub fn caret_y(&self) -> f32 {
@@ -420,5 +447,20 @@ mod tests {
         assert!(f.paste("b"));
         assert_eq!(f.text, "abc");
         assert_eq!(f.caret, 2);
+    }
+
+    #[test]
+    fn field_arrow_keys_and_home_end_move_caret() {
+        let mut f = Field::new(Id::SKey, "abcd".to_string(), false, 10);
+        assert_eq!(f.caret, 4);
+        assert!(f.on_key(0x25)); // VK_LEFT
+        assert!(f.on_key(0x25)); // VK_LEFT
+        assert_eq!(f.caret, 2);
+        assert!(f.on_key(0x27)); // VK_RIGHT
+        assert_eq!(f.caret, 3);
+        assert!(f.on_key(0x24)); // VK_HOME
+        assert_eq!(f.caret, 0);
+        assert!(f.on_key(0x23)); // VK_END
+        assert_eq!(f.caret, 4);
     }
 }

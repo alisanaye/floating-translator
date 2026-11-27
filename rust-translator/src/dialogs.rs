@@ -283,13 +283,16 @@ pub fn refresh_usage(app: &mut App) {
 }
 
 // ------------------------------------------------------------------ caret
-fn sync_caret(hwnd: HWND, field: Option<&Field>) {
+fn sync_caret(hwnd: HWND, field: Option<&mut Field>) {
     unsafe {
         let Some(f) = field else {
             DestroyCaret();
             return;
         };
-        let (x, y, ch) = with_canvas(|c| (f.caret_x(c), f.caret_y(), f.caret_h()));
+        let (x, y, ch) = with_canvas(|c| {
+            f.ensure_caret_visible(c);
+            (f.caret_x(c), f.caret_y(), f.caret_h())
+        });
         CreateCaret(hwnd, std::ptr::null_mut(), 1, ch);
         SetCaretPos(x as i32, y as i32);
         ShowCaret(hwnd);
@@ -374,12 +377,11 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
                 Id::SSave => save_settings(app),
                 _ => {
                     if let Some(w) = app.settings.as_mut() {
-                        if w.field_mut(id).is_some() {
-                            if let Some(f) = w.field_mut(id) {
-                                with_canvas(|c| f.click(c, x));
-                            }
+                        if let Some(f) = w.field_mut(id) {
+                            with_canvas(|c| f.click(c, x));
                             w.focus = Some(id);
-                            sync_caret(hwnd, w.field(id));
+                            SetFocus(hwnd);
+                            sync_caret(hwnd, w.field_mut(id));
                             invalidate(hwnd);
                         }
                     }
@@ -401,7 +403,8 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
                 if let Some(f) = w.field_mut(id) {
                     with_canvas(|c| f.click(c, x));
                     w.focus = Some(id);
-                    sync_caret(hwnd, w.field(id));
+                    SetFocus(hwnd);
+                    sync_caret(hwnd, w.field_mut(id));
                     invalidate(hwnd);
                     let f = w.field_mut(id).unwrap();
                     show_field_paste_menu(hwnd, f)
@@ -412,8 +415,8 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
                 false
             };
             if pasted {
-                if let Some(w) = app.settings.as_ref() {
-                    sync_caret(hwnd, w.field(id));
+                if let Some(w) = app.settings.as_mut() {
+                    sync_caret(hwnd, w.field_mut(id));
                     invalidate(hwnd);
                 }
             }
@@ -433,7 +436,7 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
                 if let Some(id) = w.focus {
                     let handled = w.field_mut(id).map(|f| handle_field_keydown(f, vk)).unwrap_or(false);
                     if handled {
-                        sync_caret(hwnd, w.field(id));
+                        sync_caret(hwnd, w.field_mut(id));
                         invalidate(hwnd);
                     }
                 }
@@ -447,7 +450,7 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
                         if let Some(id) = w.focus {
                             if let Some(f) = w.field_mut(id) {
                                 f.on_char(ch);
-                                sync_caret(hwnd, w.field(id));
+                                sync_caret(hwnd, w.field_mut(id));
                                 invalidate(hwnd);
                             }
                         }
@@ -457,8 +460,9 @@ unsafe extern "system" fn settings_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lp
             0
         }
         WM_SETFOCUS => {
-            if let Some(w) = app.settings.as_ref() {
-                sync_caret(hwnd, w.focus.and_then(|id| w.field(id)));
+            if let Some(w) = app.settings.as_mut() {
+                let id = w.focus;
+                sync_caret(hwnd, id.and_then(|id| w.field_mut(id)));
             }
             0
         }
@@ -823,7 +827,8 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                     if let Some(w) = app.keys.as_mut() {
                         with_canvas(|c| w.new_key.click(c, x));
                         w.focus = Some(Id::KNew);
-                        sync_caret(hwnd, Some(&w.new_key));
+                        SetFocus(hwnd);
+                        sync_caret(hwnd, Some(&mut w.new_key));
                         invalidate(hwnd);
                     }
                 }
@@ -843,10 +848,11 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                 if let Some(w) = app.keys.as_mut() {
                     with_canvas(|c| w.new_key.click(c, x));
                     w.focus = Some(Id::KNew);
-                    sync_caret(hwnd, Some(&w.new_key));
+                    SetFocus(hwnd);
+                    sync_caret(hwnd, Some(&mut w.new_key));
                     invalidate(hwnd);
                     if show_field_paste_menu(hwnd, &mut w.new_key) {
-                        sync_caret(hwnd, Some(&w.new_key));
+                        sync_caret(hwnd, Some(&mut w.new_key));
                         invalidate(hwnd);
                     }
                 }
@@ -865,7 +871,7 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
             }
             if let Some(w) = app.keys.as_mut() {
                 if handle_field_keydown(&mut w.new_key, vk) {
-                    sync_caret(hwnd, Some(&w.new_key));
+                    sync_caret(hwnd, Some(&mut w.new_key));
                     invalidate(hwnd);
                 }
             }
@@ -876,7 +882,7 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
                 if ch >= ' ' {
                     if let Some(w) = app.keys.as_mut() {
                         w.new_key.on_char(ch);
-                        sync_caret(hwnd, Some(&w.new_key));
+                        sync_caret(hwnd, Some(&mut w.new_key));
                         invalidate(hwnd);
                     }
                 }
@@ -884,8 +890,8 @@ unsafe extern "system" fn keys_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam
             0
         }
         WM_SETFOCUS => {
-            if let Some(w) = app.keys.as_ref() {
-                sync_caret(hwnd, Some(&w.new_key));
+            if let Some(w) = app.keys.as_mut() {
+                sync_caret(hwnd, Some(&mut w.new_key));
             }
             0
         }

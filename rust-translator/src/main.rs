@@ -30,8 +30,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetCursorPos,
     GetMessageW, GetWindowRect, KillTimer, LoadCursorW, PostQuitMessage, RegisterClassW, SetCursor,
     SetTimer, SetWindowPos, ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, HWND_TOPMOST,
-    IDC_ARROW, IDC_HAND, IDC_IBEAM, IDC_SIZENWSE, MSG, SWP_NOMOVE, SWP_NOZORDER, SWP_NOSIZE,
-    SW_SHOW, WM_ACTIVATE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    IDC_ARROW, IDC_HAND, IDC_IBEAM, IDC_SIZENWSE, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SW_SHOW, WM_ACTIVATE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
     WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONDOWN, WM_SETCURSOR, WM_TIMER, WNDCLASSW,
     WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
@@ -822,16 +822,18 @@ fn tick(app: &mut App) {
             }
             Pending::OpenSettings => dialogs::open_settings(app),
             Pending::KeepTopmost => {
-                unsafe {
-                    SetWindowPos(
-                        app.hwnd,
-                        HWND_TOPMOST,
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
-                    );
+                if app.settings.is_none() && app.keys.is_none() {
+                    unsafe {
+                        SetWindowPos(
+                            app.hwnd,
+                            HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                        );
+                    }
                 }
                 app.pending
                     .push((now + Duration::from_millis(4000), Pending::KeepTopmost));
