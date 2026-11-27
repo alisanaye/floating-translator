@@ -183,9 +183,6 @@ rust-translator/target/release/floating-translator.exe
 
 ---
 
-## مجوز و امضای دیجیتال (License & Code Signing)
+## مجوز (License)
 
-- این پروژه تحت مجوز متن‌باز [MIT License](LICENSE) منتشر شده است.
-- امضای دیجیتال رایگان نسخه‌های ویندوز توسط [SignPath.io](https://signpath.io/) و با گواهی [SignPath Foundation](https://signpath.org/) انجام می‌شود.
-
-> Free code signing provided by [SignPath.io](https://signpath.io/), using a certificate by [SignPath Foundation](https://signpath.org/).
+این پروژه تحت مجوز متن‌باز [MIT License](LICENSE) منتشر شده است.
